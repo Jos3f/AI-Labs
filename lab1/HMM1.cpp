@@ -2,6 +2,7 @@
 #include <iostream>
 #include <math.h>
 #include <algorithm>
+#include <iterator>
 
 
 class Matris {
@@ -128,9 +129,6 @@ std::istream &operator>>(std::istream &in, Matris &m) {
   return in;
 }
 
-// double alphaZero(Matris b, Matris pi, int state, int observation){
-//   double c = 0;
-// }
 
 int main(int argc, char const *argv[]) {
   /* code */
@@ -146,42 +144,41 @@ int main(int argc, char const *argv[]) {
   int total_observations;
   std::cin >> total_observations;
   int observations[total_observations];
-
+  for (auto &num: observations) {
+    std::cin >> num;
+  }
 
   double alpha[a.rows()];
 
+  //compute alpha zero
   double c = 0;
   for (int i = 0; i < a.rows(); i++) {
     alpha[i] = pi(i,0)*b(observations[0],i);
     c += alpha[i];
   }
 
-  //scale alpha0
-  c = 1/c;
-  for (int i = 0; i < a.rows(); i++) {
-    alpha[i] = c*alpha[i];
-  }
-
   //compute alpha t
   for (int t = 1; t < total_observations; t++) {
-    double alphatemp[a.rows()] = alpha;
+    double alphatemp[a.rows()];
+    std::copy(alpha, alpha + a.rows(), alphatemp);
     double ct = 0;
     for (int i = 0; i < a.rows(); i++) {
       alpha[i] = 0;
       for (int j = 0; j < a.rows(); j++) {
         alpha[i] += alphatemp[j]*a(i,j);
       }
-      alpha[i] = alpha[i]*b(t,i);
+      alpha[i] = alpha[i]*b(observations[t],i);
       ct += alpha[i];
     }
-    //scale alpha t
-    ct = 1/ct;
-    for (int i = 0; i < a.rows(); i++) {
-      alpha[i] = ct*alpha[i]
-    }
   }
-  std::cout << result.rows() << " " << result.cols() << " " <<  result << "\n";
 
+  double resultProb = 0;
+
+  for (auto &num: alpha) {
+    resultProb += num;
+  }
+
+  std::cout << resultProb << '\n';
 
   return 0;
 }
