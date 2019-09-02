@@ -134,13 +134,14 @@ int getMaxDelta(Matris & delta,const Matris & a,const Matris & b, int observatio
   int maxIndex = 0;
   double maxValue = 0;
   for (int j = 0; j < a.rows(); j++) {
-    double deltaValue = a(state, j) * delta(time_step-1, j) * b(observations[time_step], j);
+    double deltaValue = a(state, j) * delta(time_step-1, j) * b(observations[time_step], state);
     if (deltaValue > maxValue) {
       maxValue = deltaValue;
       maxIndex = j;
     }
   }
   delta(time_step, state) = maxValue;
+
   return maxIndex;
 }
 
@@ -166,6 +167,7 @@ int main(int argc, char const *argv[]) {
   Matris delta(total_observations, a.rows());
   Matris delta_index(total_observations, a.rows());
 
+
   //compute initial
   double c = 0;
   for (int i = 0; i < a.rows(); i++) {
@@ -190,7 +192,7 @@ int main(int argc, char const *argv[]) {
   }
 
   for (int time_step = total_observations - 2; time_step >= 0; time_step--) {
-    maxPath[time_step] = delta_index(time_step, maxPath[time_step+1]);
+    maxPath[time_step] = delta_index(time_step + 1, maxPath[time_step+1]);
   }
 
   for (int i = 0; i < total_observations; i++) {
