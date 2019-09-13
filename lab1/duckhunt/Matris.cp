@@ -45,7 +45,10 @@ public:
 
 
     ~Matris(){
+    // std::cerr << "Before Free" << '\n';
      delete [] m_vec;
+     // std::cerr << "after Free" << '\n';
+
    }
 
    // operators
@@ -58,7 +61,10 @@ public:
       for (int i = 0; i < rows() * cols(); i++) {
         temp_vec[i] = m.m_vec[i];
       }
+      // std::cerr << "Before free 1" << '\n';
       delete [] m_vec;
+      // std::cerr << "After free 1" << '\n';
+      // double * m_vec;
       m_vec = temp_vec;
 
       return *this;
