@@ -11,6 +11,7 @@ namespace ducks
 // Forward declarations
 void updateAlpha(Matris &A, Matris &B, Matris &pi, std::vector<Matris> & alpha, std::vector<int> &observations, std::vector<double> & c);
 void updateAlphaTrain(Matris &A, Matris &B, Matris &pi, std::vector<Matris> & alpha, std::vector<int> &observations, std::vector<double> & c);
+struct HMM;
 
 Matris model_1_A;
 Matris model_1_B;
@@ -30,8 +31,18 @@ std::vector<std::vector<double>> c_birds; //c for all birds,
 
 int time_step;
 int current_round;
-int TRAINING_FREQUENCY = 10;
-int MIN_OBS_TRAIN = 10;
+//int TRAINING_FREQUENCY = 10;
+int MAX_ITER_TRAIN = 100;
+int TRAINING_START = 80;
+double PROB_THRESHOLD = 0.8;
+
+//best so far: score 8 with parameters
+//int MAX_ITER_TRAIN = 40;
+//int TRAINING_START = 70;
+//double PROB_THRESHOLD = 0.8;
+
+
+std::vector<std::vector<HMM>> AllModels;
 
 // EMovement = movement_to_shoot
 
@@ -45,7 +56,7 @@ struct HMM {
 
   int total_observations;
 
-  // double [] c;
+  std::vector<double> c;
 
   HMM(){
     a = Matris(5,5, {
@@ -73,175 +84,204 @@ struct HMM {
 
   }
 
-  Matris calcNextEmissionPD(Matris current_pi){
+  Matris calcNextObsDist(Matris current_pi){
     return current_pi * a * b;
   }
 
-  // std::vector<Matris> calcAlpha(std::vector<int> &observations){
-  //
-  //   return;
-  // }
+  Matris calcAlpha(const std::vector<int> &observations){
+    int total_observations = observations.size();
+    Matris allAlpha(total_observations, a.rows());
+    c = std::vector<double>(total_observations, 0); // This has been changed scince HMM3
+    c[0] = 0;
+    for (int i = 0; i < a.rows(); i++) {
+      allAlpha(0, i) = pi(i,0)*b(observations[0],i);
+      c[0] += allAlpha(0, i);
+    }
+    // scale the alpha zero
+    c[0] = 1.0 / c[0];
+    for (int i = 0; i < a.rows(); i++) {
+      allAlpha(0, i) *= c[0];
+    }
 
-  void train(std::vector<int> observations){
+    //compute alpha t
+    for (int t = 1; t < total_observations; t++) {
+      c[t] = 0;
+      for (int i = 0; i < a.rows(); i++) {
+        allAlpha(t, i) = 0;
+        for (int j = 0; j < a.rows(); j++) {
+          allAlpha(t, i) += allAlpha(t-1, j) * a(i,j);
+        }
+        allAlpha(t, i) = allAlpha(t, i) * b(observations[t],i);
+        c[t] += allAlpha(t, i);
+      }
 
+      // scale the alpha 1 to T
+      c[t] = 1.0 / c[t];
+
+      for (int i = 0; i < a.rows(); i++) {
+        allAlpha(t, i) *= c[t];
+      }
+    }
+
+    return allAlpha;
+  }
+
+  Matris calcBeta(const std::vector<int> &observations){
+    int total_observations = observations.size();
+    Matris allBeta(total_observations, a.rows());
+    // calculate Beta pass T
+    for (int state = 0; state < a.rows(); state++) {
+      allBeta(total_observations - 1, state) = 1 * c[total_observations - 1];
+    }
+
+    // std::cout << "Allbeta: " << '\n';
+    // std::cout << allBeta << '\n';
+
+    for (int time_step = total_observations - 2; time_step >= 0; time_step--) {
+      for (int i = 0; i < a.rows(); i++) {
+        for (int j = 0; j < a.rows(); j++) {
+          allBeta(time_step, i) += a(j, i) * b(observations[time_step + 1], j) * allBeta(time_step + 1, j);
+        }
+        // std::cout << "Beta: " << allBeta(time_step, i) << '\n';
+        // Scale beta t with same factor as alpha t
+        allBeta(time_step, i) *= c[time_step];
+      }
+    }
+    return allBeta;
+  }
+
+  void train(const std::vector<int> & observations){
+    double oldLogProb = -std::numeric_limits<double>::infinity();
+    double logProb = -std::numeric_limits<double>::infinity();
+    int maxIter = MAX_ITER_TRAIN;
+    int itertation = 0;
+
+    while ((logProb > oldLogProb || itertation == 0) && itertation < maxIter) {
+
+      Matris allAlpha = calcAlpha(observations);
+      Matris allBeta = calcBeta(observations);
+
+      int total_observations = observations.size();
+
+      //Compute sum of alpha T
+      double denom = sumAlphaT(allAlpha);
+      double resultProb = denom;
+      //compute gamma i,j and gamma i
+      Matris digamma[total_observations];
+      Matris gamma(total_observations,a.rows());
+
+      for (int time_step = 0; time_step < total_observations - 1; time_step++) {
+        digamma[time_step] = Matris(a.rows(), a.rows());
+        for (int i = 0; i < a.rows(); i++) {
+          for (int j = 0; j < a.rows(); j++) {
+            digamma[time_step](j,i) = allAlpha(time_step, i)*a(j,i)*b(observations[time_step+1], j)*allBeta(time_step+1, j)/denom;
+            gamma(time_step, i) += digamma[time_step](j,i);
+          }
+        }
+      }
+
+      // special case for gamma T
+      denom = 0;
+      for (int i = 0; i < a.rows(); i++) {
+        denom += allAlpha(total_observations-1, i);
+      }
+      for (int i = 0; i < a.rows(); i++) {
+        gamma(total_observations-1, i) = allAlpha(total_observations-1, i)/denom;
+      }
+
+      // Re-estimate A, B and pi
+
+      // Re-estimate pi
+      for (int i = 0; i < a.rows(); i++) {
+        pi(i,0) = gamma(0, i);
+      }
+
+      // Re-estimate A
+      for (int i = 0; i < a.rows(); i++) {
+        for (int j = 0; j < a.rows(); j++) {
+          double numer = 0;
+          double denom = 0;
+          for (int time_step = 0; time_step < total_observations - 1; time_step++) {
+            numer = numer + digamma[time_step](j, i);
+            denom = denom + gamma(time_step, i);
+          }
+          // std::cout << "Estimate A step("<< i << " " << j <<  "): denom: " << denom << " numer: " << numer << '\n';
+          // if (denom < 0.0000000000001 && denom > -0.0000000000001 ) {
+          //  a(j,i) = 0;
+          // } else {
+            a(j,i) = numer/denom;
+          // }
+        }
+      }
+
+      // Re-estimate B
+      for (int j = 0; j < a.rows(); j++) {
+        for (int k = 0; k < b.cols(); k++) {
+          double numer = 0;
+          double denom = 0;
+          for (int time_step = 0; time_step < total_observations - 1; time_step++) {
+            if (observations[time_step] == k) {
+              numer = numer + gamma(time_step, j);
+            }
+            denom = denom + gamma(time_step, j);
+          }
+          // if (denom < 0.000000000000001 && denom > -0.0000000000001 ) {
+          //   b(k,j) = 0;
+          // } else {
+            b(k,j) = numer/denom;
+          // }
+        }
+      }
+
+      // Compute log[P(O|λ)]
+      oldLogProb = logProb;
+      logProb = 0;
+      for (int time_step = 0; time_step < total_observations; time_step++) {
+        logProb -= log(c[time_step]);
+      }
+      itertation++;
+    }
+
+    return;
+  }
+
+  Matris getLastAlpha(const std::vector<int> & observations){
+    Matris allAlpha = calcAlpha(observations);
+    Matris lastAlpha(a.rows() ,1);
+    for (int i = 0; i < a.rows(); i++) {
+      lastAlpha(i, 0) = allAlpha(observations.size() - 1, i);
+    }
+    return lastAlpha;
+  }
+
+  double sumAlphaT(const Matris allAlpha){
+    double sum = 0;
+    for (int state = 0; state < a.rows(); state++)
+      sum += allAlpha(allAlpha.cols() - 1, state);
+    return sum;
   }
 
 };
 
 Player::Player()
 {
-  model_1_A = Matris(5,5, {
-    0.10, 0.20, 0.3, 0.15, 0.25,
-    0.15, 0.10, 0.15, 0.35, 0.25,
-    0.2, 0.08, 0.12, 0.25, 0.35,
-    0.25, 0.35, 0.13, 0.07, 0.2,
-    0.35, 0.15, 0.25, 0.12, 0.13
-  });
-  model_1_B = Matris(9,5, {
-    0.10, 0.12, 0.21, 0.15, 0.12, 0.05, 0.08, 0.09, 0.08,
-    0.15, 0.10, 0.15, 0.08, 0.15, 0.1, 0.08, 0.12, 0.07,
-    0.2, 0.08, 0.12, 0.05, 0.10, 0.05, 0.15, 0.2, 0.05,
-    0.15, 0.15, 0.11, 0.07, 0.2, 0.08, 0.1, 0.02, 0.12,
-    0.15, 0.15, 0.14, 0.12, 0.13, 0.1, 0.05, 0.05, 0.11
-  });
-  model_1_pi = Matris(5,1, {
-    0.12, 0.18, 0.2, 0.3, 0.2
-  });
-
-  time_step = -1;
   current_round = -1;
   // observation_sequences = vector<vector<int>>();
   // setUpRound();
+  AllModels = std::vector<std::vector<HMM>>();
+  for (int i = 0; i < COUNT_SPECIES; i++) {
+    AllModels.push_back(std::vector<HMM>());
+  }
 }
 
 // Do everything that is needed for a new round
 void setUpRound(const GameState &pState, const Deadline &pDue){
 
-  c_birds = std::vector<std::vector<double>>(pState.getNumBirds(), std::vector<double>());
-
-
-  time_step = 0;
+  time_step = -1;
   observation_sequences = std::vector<std::vector<int>>();
-  model_1_alpha = std::vector<std::vector<Matris>>();
-  model_1_beta = std::vector<std::vector<Matris>>();
   for (size_t bird_index = 0; bird_index < pState.getNumBirds(); bird_index++) {
     observation_sequences.push_back(std::vector<int>());
-    model_1_alpha.push_back(std::vector<Matris>());
-    model_1_beta.push_back(std::vector<Matris>());
   }
-}
-
-void train(Matris &A, Matris &B, Matris &pi, std::vector<Matris> alpha, std::vector<int> & observation_sequences, std::vector<double> & c){
-  // updateAlphaTrain(A, B, pi,
-  //   alpha,
-  //   observation_sequences, c);
-  // updateBeta(model_1_A, model_1_B,
-  //   model_1_beta[(int) bird_index],
-  //   observation_sequences[(int) bird_index],
-  //   c_birds[(int) bird_index]);
-  return;
-}
-
-void updateAlpha(Matris &A, Matris &B, Matris &pi, std::vector<Matris> & alpha, std::vector<int> &observations, std::vector<double> & c){
-  int observation_time_step = 0;
-  if (time_step == 0) {
-    //compute alpha zero
-    c.push_back(0);
-    alpha.push_back(Matris(A.rows(), 1));
-    for (int state = 0; state < A.rows(); state++) {
-      alpha[0](state, 0) = pi(state,0)*B(observations[0],state);
-      c[0] += alpha[0](state, 0);
-    }
-    // scale the alpha zero
-    c[0] = 1.0 / c[0];
-    for (int state = 0; state < A.rows(); state++) {
-      alpha[0](state, 0) *= c[0];
-    }
-  } else {
-    //compute alpha t
-    alpha.push_back(Matris(A.rows(), 1));
-    c.push_back(0);
-      c[time_step] = 0;
-      for (int state = 0; state < A.rows(); state++) {
-        (alpha[time_step])(state, 0) = 0;
-        for (int state2 = 0; state2 < A.rows(); state2++) {
-          (alpha[time_step])(state, 0) += alpha[time_step-1](state2, 0) * A(state,state2);
-        }
-        (alpha[time_step])(state, 0) = alpha[time_step](state, 0) * B(observations[time_step],state);
-        c[time_step] += alpha[time_step](state, 0);
-      }
-      // scale the alpha 1 to T
-      c[time_step] = 1.0 / c[time_step];
-      for (int state = 0; state < A.rows(); state++) {
-        (alpha[time_step])(state, 0) *= c[time_step];
-      }
-  }
-  return;
-}
-
-void updateAlphaTrain(Matris &A, Matris &B, Matris &pi, std::vector<Matris> & alpha, std::vector<int> &observations, std::vector<double> & c){
-  int observation_time_step = observations.size();
-  // Reset alpha and c
-  alpha = std::vector<Matris>();
-  c = std::vector<double>();
-  std::cerr << "Alpha: " << '\n';
-
-  //compute alpha zero
-  c.push_back(0);
-  alpha.push_back(Matris(A.rows(), 1));
-  for (int state = 0; state < A.rows(); state++) {
-    alpha[0](state, 0) = pi(state,0)*B(observations[0],state);
-    c[0] += alpha[0](state, 0);
-  }
-  // scale the alpha zero
-  c[0] = 1.0 / c[0];
-  for (int state = 0; state < A.rows(); state++) {
-    alpha[0](state, 0) *= c[0];
-  }
-
-  //compute alpha t
-  for (int t = 1; t < observation_time_step; t++) {
-
-    alpha.push_back(Matris(A.rows(), 1));
-    c.push_back(0);
-    c[time_step] = 0;
-    for (int state = 0; state < A.rows(); state++) {
-      (alpha[t])(state, 0) = 0;
-      for (int state2 = 0; state2 < A.rows(); state2++) {
-        (alpha[t])(state, 0) += alpha[t-1](state2, 0) * A(state,state2);
-      }
-      (alpha[t])(state, 0) = alpha[t](state, 0) * B(observations[t],state);
-      c[t] += alpha[t](state, 0);
-    }
-    // scale the alpha 1 to T
-    c[t] = 1.0 / c[t];
-    for (int state = 0; state < A.rows(); state++) {
-      (alpha[t])(state, 0) *= c[t];
-    }
-  }
-
-  return;
-}
-
-void updateBeta(Matris & A, Matris & B,  std::vector<Matris> & beta, std::vector<int> &observations, std::vector<double> & c){
-  // calculate Beta pass T
-  beta.insert(beta.begin(), Matris(A.rows(),1));
-  for (int state = 0; state < A.rows(); state++) {
-    beta[0](state, 0) = 1 * c[observations.size() - 1];
-  }
-
-  for (int observation_step = observations.size() - 2; observation_step >= 0; observation_step--) {
-    beta.insert(beta.begin(), Matris(A.rows(),1));
-    for (int state = 0; state < A.rows(); state++) {
-      for (int state2 = 0; state2 < A.rows(); state2++) {
-        beta[0](state, 0) += A(state2, state) * B(observations[observation_step + 1], state2) * beta[1](state2, 0);
-      }
-      // Scale beta t with same factor as alpha t
-      beta[0](state, 0) *= c[observation_step];
-      // allBeta(observation_step, i) *= c[observation_step];
-    }
-  }
-
 }
 
 //update at each time_step
@@ -258,55 +298,48 @@ void updateObservations(const GameState &pState, std::vector<std::vector<int>> &
   }
 }
 
+std::vector<int> getDeathPenalty(const GameState & pState){
+  int predMove = -1;
+  int guiltyBird = -1;
+  double highestProb = -1;
+
+  for (size_t bird_index = 0; bird_index < pState.getNumBirds(); bird_index++) {
+    if (pState.getBird(bird_index).isAlive()) {
+      std::vector<int> observations = observation_sequences[(int) bird_index];
+      HMM birdModel = HMM();
+      birdModel.train(observations);
+      Matris lastAlpha = birdModel.getLastAlpha(observations);
+      Matris movementDist = birdModel.calcNextObsDist(lastAlpha);
+
+      for (int movement = 0; movement < movementDist.cols(); movement++) {
+        if (movementDist(movement, 0) > highestProb && movementDist(movement, 0) > PROB_THRESHOLD) {
+          highestProb = movementDist(movement, 0);
+          guiltyBird = bird_index;
+          predMove = movement;
+        }
+      }
+    }
+
+  }
+  return {guiltyBird, predMove};
+}
+
 Action Player::shoot(const GameState &pState, const Deadline &pDue)
 {
     /*
      * Here you should write your clever algorithms to get the best action.
      * This skeleton never shoots.
      */
-     // std::cerr << "here 1" << '\n';
-     time_step++;
-     std::cerr << "Time step start: " << time_step << '\n';
-
-     std::cerr << "Round: " << pState.getRound() << '\n';
 
      if (current_round != pState.getRound()) {
        // Do everything that is needed for a new round
        current_round = pState.getRound();
        setUpRound(pState, pDue);
+       std::cerr << "Round" << current_round << '\n';
      }
+     time_step++;
+
      updateObservations(pState, observation_sequences);
-     // std::cerr << "Model 1 A" << '\n';
-     // std::cerr << model_1_A << '\n';
-     // std::cerr << "Model 1 B" << '\n';
-     // std::cerr << model_1_B << '\n';
-     // std::cerr << "Model 1 pi" << '\n';
-     // std::cerr << model_1_pi << '\n';
-     // std::cerr << pState.getNumBirds() << '\n';
-     if (time_step % TRAINING_FREQUENCY == 0 && time_step > MIN_OBS_TRAIN) {
-       std::vector<int> observation_sequences_train = std::vector<int>();
-       for (size_t bird_index = 0; bird_index < pState.getNumBirds(); bird_index++) {
-         observation_sequences_train.insert(observation_sequences_train.end(), observation_sequences[(int) bird_index].begin(), observation_sequences[(int) bird_index].begin());
-       }
-       model_1_alpha_train = std::vector<Matris>();
-       c_train = std::vector<double>();
-       train(model_1_A, model_1_B, model_1_pi, model_1_alpha_train, observation_sequences_train, c_train);
-     }
-
-     //update alpha and beta
-     std::vector<Matris> pi_birds(pState.getNumBirds(), Matris(0,0));
-     std::vector<Matris> movement_predictions_birds(pState.getNumBirds(), Matris(0,0));
-     for (size_t bird_index = 0; bird_index < pState.getNumBirds(); bird_index++) {
-       if (pState.getBird((int) bird_index).isAlive()) {
-         updateAlpha(model_1_A, model_1_B, model_1_pi,
-           model_1_alpha[(int) bird_index],
-           observation_sequences[(int) bird_index],
-           c_birds[(int) bird_index]);
-
-        pi_birds[(int) bird_index] = model_1_alpha[(int) bird_index][time_step];
-        movement_predictions_birds[(int) bird_index] = pi_birds[(int) bird_index] * model_1_A * model_1_B;
-          }
-       }
 
      std::map<int, EMovement> movement_map;
      movement_map[0] = MOVE_UP_LEFT;
@@ -320,40 +353,29 @@ Action Player::shoot(const GameState &pState, const Deadline &pDue)
      movement_map[8] = MOVE_DOWN_RIGHT;
      movement_map[9] = COUNT_MOVE;
 
-     //make decision
-     int most_certain_bird = -1;
-     double threshold = 0.1;
-     double probability = threshold;
-     int movement_to_shoot = -1;
-     for (int bird = 0; bird < pState.getNumBirds(); bird++) {
-       if (pState.getBird((int) bird).isAlive()) {
-         for (int movement = 0; (int) movement < (movement_predictions_birds[(int) bird]).cols(); movement++) {
-           double movement_prob = (movement_predictions_birds[(int) bird])(movement, 0);
+     if (time_step > TRAINING_START) {
+       std::vector<int> deathPenalty = getDeathPenalty(pState);
+       int most_certain_bird = deathPenalty[0];
+       int movement_to_shoot = deathPenalty[1];
 
-          //std::cerr << "prob" << probability<< '\n';
-           if (probability < movement_prob) {
-             probability = movement_prob;
-             most_certain_bird = (int) bird;
-             movement_to_shoot = movement;
-           }
-         }
+       //if we did not find a bird to shoot
+       if (most_certain_bird == -1) {
+         return cDontShoot;
        }
 
-     }
-
-     // most_certain_bird = 5;
-     if (most_certain_bird != -1) {
        std::cerr << "Time step: " << time_step << '\n';
-       std::cerr << "bird to shoot " << most_certain_bird << '\n';
-       std::cerr << "birds pred move " << movement_map[movement_to_shoot] << '\n';
-       std::cerr << "Current score " << pState.myScore() <<'\n';
+       //std::cerr << "bird to shoot " << most_certain_bird << '\n';
+       //std::cerr << "birds pred move " << movement_map[movement_to_shoot] << '\n';
+       //std::cerr << "Current score " << pState.myScore() <<'\n';
+       std::cerr << "Shooting attempt" << '\n';
        return Action(most_certain_bird, movement_map[movement_to_shoot]);
+
+     } else {
+       // This line choose not to shoot
+       return cDontShoot;
      }
 
-
-    // This line choose not to shoot
-    return cDontShoot;
-
+    //return cDontShoot;
     //This line would predict that bird 0 will move right and shoot at it
     // return Action(0, MOVE_RIGHT);
 }
