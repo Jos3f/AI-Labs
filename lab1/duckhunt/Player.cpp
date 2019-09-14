@@ -13,14 +13,12 @@ namespace ducks
 // Forward declarations
 struct HMM;
 int guessSpecies(std::vector<int> observations);
-
+int guessSpeciesAndBlackProb(std::vector<int> observations, double & black_stork_prob);
 
 
 // Global mappings
 std::map<int, EMovement> movement_map;
 std::map<int, ESpecies> species_map;
-
-
 
 
 std::vector<std::vector<int>> observation_sequences; // Bird, time
@@ -37,14 +35,12 @@ int current_round;
 // double PERCENTAGE_TO_GUESS_UNKNOWN = 0.2;
 //
 
-int MAX_ITER_TRAIN = 100;
+int MAX_ITER_TRAIN = 40;
 int TRAINING_START = 70;
 double PROB_THRESHOLD = 0.8;
 double GUESS_LOGPROB_THRESHOLD = -5000;
 double PERCENTAGE_TO_GUESS_UNKNOWN = 0.2;
-
-
-
+double BLACK_STORK_LOGPROB_THRESHOLD = -4500;
 
 std::vector<std::vector<HMM>> AllModels;
 
@@ -71,6 +67,12 @@ struct HMM {
       0.35, 0.15, 0.25, 0.12, 0.13
     });
 
+    // a = Matris(3,3, {
+    //   0.5, 0.20, 0.3,
+    //   0.25, 0.40, 0.35,
+    //   0.22, 0.52, 0.26
+    // });
+
     b = Matris(9,5, {
       0.10, 0.12, 0.21, 0.15, 0.12, 0.05, 0.08, 0.09, 0.08,
       0.15, 0.10, 0.15, 0.08, 0.15, 0.1, 0.08, 0.12, 0.07,
@@ -79,9 +81,19 @@ struct HMM {
       0.15, 0.15, 0.14, 0.12, 0.13, 0.1, 0.05, 0.05, 0.11
     });
 
+    // b = Matris(9,3, {
+    //   0.10, 0.12, 0.21, 0.15, 0.12, 0.05, 0.08, 0.09, 0.08,
+    //   0.15, 0.10, 0.15, 0.08, 0.15, 0.1, 0.08, 0.12, 0.07,
+    //   0.2, 0.08, 0.12, 0.05, 0.10, 0.05, 0.15, 0.2, 0.05
+    // });
+
     pi = Matris(5,1, {
       0.12, 0.18, 0.2, 0.3, 0.2
     });
+
+    // pi = Matris(3,1, {
+    //   0.4, 0.32, 0.28
+    // });
 
     // num_states = A.rows();
     // num_observations = B.cols();
@@ -364,8 +376,13 @@ std::vector<int> getDeathPenalty(const GameState & pState){
   for (size_t bird_index = 0; bird_index < pState.getNumBirds(); bird_index++) {
     if (pState.getBird(bird_index).isAlive()) {
       std::vector<int> observations = observation_sequences[(int) bird_index];
-      int likely_species = guessSpecies(observations);
-      if ((likely_species != SPECIES_BLACK_STORK) && (likely_species != SPECIES_UNKNOWN) ) {
+      double black_stork_prob;
+      int likely_species = guessSpeciesAndBlackProb(observations, black_stork_prob);
+
+      //conditions for death penalty
+      if ((likely_species != SPECIES_BLACK_STORK)
+      && (black_stork_prob < BLACK_STORK_LOGPROB_THRESHOLD)
+      && (likely_species != SPECIES_UNKNOWN) ) {
         HMM birdModel = HMM();
         birdModel.train(observations);
         Matris lastAlpha = birdModel.getLastAlpha(observations);
@@ -401,8 +418,6 @@ Action Player::shoot(const GameState &pState, const Deadline &pDue)
 
      updateObservations(pState, observation_sequences);
 
-
-
      if (time_step > TRAINING_START) {
        std::vector<int> deathPenalty = getDeathPenalty(pState);
        int most_certain_bird = deathPenalty[0];
@@ -437,11 +452,13 @@ Action Player::shoot(const GameState &pState, const Deadline &pDue)
     // return Action(0, MOVE_RIGHT);
 }
 
-int guessSpecies(std::vector<int> observations) {
+int guessSpeciesAndBlackProb(std::vector<int> observations, double & black_stork_prob) {
   int best_guess = -1;
   double highest_similarity_prob = GUESS_LOGPROB_THRESHOLD;
+
   for (size_t speciesModels_index = 0; speciesModels_index < AllModels.size(); speciesModels_index++) {
     double avg_prob = -std::numeric_limits<double>::infinity();
+    // std::cerr << "Start err prob" << '\n';
     for (size_t model_index = 0; model_index < AllModels[speciesModels_index].size(); model_index++) {
       if ((int) model_index == 0) {
         avg_prob = 0;
@@ -449,19 +466,33 @@ int guessSpecies(std::vector<int> observations) {
       HMM hmm_model = AllModels[speciesModels_index][model_index];
       // std::cerr << "calcProb(observations): " << hmm_model.calcProb(observations) << '\n';
       double prob = hmm_model.calcProb(observations);
+      // std::cerr << "Part avg_prob" << prob << '\n';
 
       avg_prob += prob / AllModels[speciesModels_index].size();
     }
+    // std::cerr << "Avg_prob: " << avg_prob<< '\n';
+    // std::cerr << "End err prob" << '\n';
+
     // std::cerr << "avg_prob: " <<  avg_prob << '\n';
     // std::cerr << "/* error message */" << '\n';
     if (avg_prob > highest_similarity_prob) {
       highest_similarity_prob = avg_prob;
       best_guess = speciesModels_index;
     }
+    if ((int) speciesModels_index == (int) SPECIES_BLACK_STORK) {
+      black_stork_prob = avg_prob;
+    }
   }
   // std::cerr << "highest_similarity_prob: " << highest_similarity_prob << '\n';
 
   return best_guess;
+}
+
+int guessSpecies(std::vector<int> observations){
+
+  double black_stork_trash;
+
+  return guessSpeciesAndBlackProb(observations, black_stork_trash);
 }
 
 bool haveAllSpecies(){
@@ -471,6 +502,17 @@ bool haveAllSpecies(){
     }
   }
   return true;
+}
+
+std::vector<int> getNotFoundSpecies(){
+  std::vector<int> notFoundSpecies;
+  for (size_t species = 0; species < AllModels.size(); species++) {
+    if (AllModels[species].size() == 0) {
+      notFoundSpecies.push_back(species);
+    }
+  }
+  return notFoundSpecies;
+
 }
 
 std::vector<ESpecies> Player::guess(const GameState &pState, const Deadline &pDue)
@@ -485,7 +527,12 @@ std::vector<ESpecies> Player::guess(const GameState &pState, const Deadline &pDu
      for (size_t bird_index = 0; bird_index < pState.getNumBirds(); bird_index++) {
        ESpecies guess = species_map[guessSpecies(observation_sequences[(int) bird_index])];
        if ((pState.getRound() == 0 || (!have_all_species && ((double) rand() / (RAND_MAX)) < PERCENTAGE_TO_GUESS_UNKNOWN)) && guess == SPECIES_UNKNOWN ) {
-         guess = SPECIES_RAVEN;
+
+         //just guess on species not revealed/found
+         std::vector<int> notFoundSpecies = getNotFoundSpecies();
+         int random_species_guess = notFoundSpecies[rand() % notFoundSpecies.size()];
+
+         guess = species_map[random_species_guess];
        }
        lGuesses[(int) bird_index] = guess;
      }
@@ -513,8 +560,6 @@ void Player::reveal(const GameState &pState, const std::vector<ESpecies> &pSpeci
     /*
      * If you made any guesses, you will find out the true species of those birds in this function.
      */
-
-
      for (size_t bird_index = 0; bird_index < pState.getNumBirds(); bird_index++) {
        if (pSpecies[(int) bird_index] == -1) {
          continue;
