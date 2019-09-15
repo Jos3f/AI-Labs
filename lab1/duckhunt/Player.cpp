@@ -42,7 +42,7 @@ int TRAINING_START = 60;
 double PROB_THRESHOLD = 0.75;
 double GUESS_LOGPROB_THRESHOLD = -1000;
 double PERCENTAGE_TO_GUESS_UNKNOWN = 0.2;
-double BLACK_STORK_LOGPROB_THRESHOLD = -200;
+double BLACK_STORK_LOGPROB_THRESHOLD = -400;
 int NUM_STATES = 5;
 
 std::vector<std::vector<HMM>> AllModels;
@@ -217,6 +217,24 @@ struct HMM {
     return allBeta;
   }
 
+
+    void smoothRow(int row, Matris & matris){
+      double max_val = 0.0;
+      int max_col = -1;
+      for (int col = 0; col < matris.cols(); col++) {
+          if (matris(col, row) > max_val){
+             max_val = matris(col, row);
+             max_col = col;
+         }
+        }
+      for (int col = 0; col < matris.cols(); col++) {
+          if (matris(col, row) < 0.0001){
+            matris(col, row) = 0.0001;
+            matris(max_col, row) -= 0.0001;
+        }
+      }
+    }
+
   void train(const std::vector<int> & observations){
     double oldLogProb = -std::numeric_limits<double>::infinity();
     double logProb = -std::numeric_limits<double>::infinity();
@@ -310,28 +328,31 @@ struct HMM {
       itertation++;
     }
 
-    for (int x = 0; x < a.cols(); x++) {
-      for (int y = 0; y < a.rows(); y++) {
+    for (int row = 0; row < a.rows(); row++) {
+      smoothRow(row, a);
+      /*for (int y = 0; y < a.rows(); y++) {
         if (a(x,y) < 0.0001) {
           a(x,y) = 0.0001;
         }
-      }
+      }*/
     }
 
-    for (int x = 0; x < b.cols(); x++) {
-      for (int y = 0; y < b.rows(); y++) {
+    for (int row = 0; row < b.rows(); row++) {
+      smoothRow(row, b);
+      /*for (int y = 0; y < b.rows(); y++) {
         if (b(x,y) < 0.0001) {
           b(x,y) = 0.0001;
         }
-      }
+      }*/
     }
 
-    for (int x = 0; x < pi.cols(); x++) {
-      for (int y = 0; y < pi.rows(); y++) {
-        if (pi(x,y) < 0.0001) {
-          pi(x,y) = 0.0001;
-        }
-      }
+    for (int row = 0; row < pi.rows(); row++) {
+        smoothRow(row, pi);
+        /*for (int y = 0; y < pi.rows(); y++) {
+          if (pi(x,y) < 0.0001) {
+            pi(x,y) = 0.0001;
+          }
+        }*/
     }
 
     return;
@@ -373,7 +394,6 @@ struct HMM {
     for (int time_step = 0; time_step < total_observations; time_step++) {
       logProb -= log(c[time_step]);
     }
-
     return logProb;
   }
 
