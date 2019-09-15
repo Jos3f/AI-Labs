@@ -5,6 +5,7 @@
 #include <vector>
 #include <map>
 #include <cmath>
+#pragma GCC optimize ("O0")
 // #include <r>
 
 namespace ducks
@@ -20,26 +21,26 @@ int guessSpeciesAndBlackProb(std::vector<int> observations, double & black_stork
 std::map<int, EMovement> movement_map;
 std::map<int, ESpecies> species_map;
 
-
 std::vector<std::vector<int>> observation_sequences; // Bird, time
-
 
 int time_step;
 int current_round;
 int count_bird_hits = 0;
+int count_shooting_attempts = 0;
 
-//best so far: score  with parameters
-// int MAX_ITER_TRAIN = 40;
-// int TRAINING_START = 70;
-// double PROB_THRESHOLD = 0.8;
-// double GUESS_LOGPROB_THRESHOLD = -5000;
-// double PERCENTAGE_TO_GUESS_UNKNOWN = 0.2;
-//
+//int MAX_ITER_TRAIN = 50;
+//int TRAINING_START = 60;
+//double PROB_THRESHOLD = 0.75;
+//double GUESS_LOGPROB_THRESHOLD = -1000;
+//double PERCENTAGE_TO_GUESS_UNKNOWN = 0.2;
+//double BLACK_STORK_LOGPROB_THRESHOLD = -200;
+//int NUM_STATES = 5;
+// score 112
 
 int MAX_ITER_TRAIN = 50;
 int TRAINING_START = 60;
-double PROB_THRESHOLD = 0.8;
-double GUESS_LOGPROB_THRESHOLD = -5000;
+double PROB_THRESHOLD = 0.75;
+double GUESS_LOGPROB_THRESHOLD = -1000;
 double PERCENTAGE_TO_GUESS_UNKNOWN = 0.2;
 double BLACK_STORK_LOGPROB_THRESHOLD = -200;
 int NUM_STATES = 5;
@@ -275,6 +276,7 @@ struct HMM {
           // if (denom < 0.0000000000001 && denom > -0.0000000000001 ) {
           //  a(j,i) = 0;
           // } else {
+
             a(j,i) = numer/denom;
           // }
         }
@@ -371,6 +373,7 @@ struct HMM {
     for (int time_step = 0; time_step < total_observations; time_step++) {
       logProb -= log(c[time_step]);
     }
+
     return logProb;
   }
 
@@ -445,16 +448,30 @@ void addMovementDistToAvg(Matris movementDist, Matris & avgMovementDist, int num
         avgMovementDist(move, 0) += movementDist(move, 0)/num_state_models;
     }
 }
-Matris computeAvgMovementDist(std::vector<int> observations){
+Matris computeAvgMovementDist(std::vector<int> observations, int likely_species){
     //create multiple HMM:s for each bird and then take avg prediction
-    std::vector<double> states_bird_model = {3, 5};
+    std::vector<double> states_bird_model = {5};
     Matris avgMovementDist(COUNT_MOVE, 1);
+    int num_models = states_bird_model.size();
+
+    //avg movement dist from stored models
+    /*
+    if (time_step > 90 && current_round > 7) {
+        num_models += AllModels[likely_species].size();
+        for (int species_model_idx = 0; species_model_idx < AllModels[likely_species].size(); ++species_model_idx) {
+            HMM hmm_model = AllModels[likely_species][species_model_idx];
+            Matris lastAlpha = hmm_model.getLastAlpha(observations);
+            Matris movementDist = hmm_model.calcNextObsDist(lastAlpha);
+            addMovementDistToAvg(movementDist, avgMovementDist, num_models);
+        }
+    }*/
 
     //Compute movement dist for each nr of states for a bird
     for (int index = 0; index < states_bird_model.size(); ++index) {
         Matris movementDist = getMovementDistForBirdModel(states_bird_model[index], observations);
-        addMovementDistToAvg(movementDist, avgMovementDist, states_bird_model.size());
+        addMovementDistToAvg(movementDist, avgMovementDist, num_models);
     }
+    //std::cerr << "avgMovementDist " << avgMovementDist << '\n';
     return avgMovementDist;
 }
 
@@ -474,7 +491,7 @@ std::vector<int> getDeathPenalty(const GameState & pState){
       && (black_stork_prob < BLACK_STORK_LOGPROB_THRESHOLD)
       && (likely_species != SPECIES_UNKNOWN) ) {
 
-          Matris avgMovementDist = computeAvgMovementDist(observations);
+          Matris avgMovementDist = computeAvgMovementDist(observations, likely_species);
 
           for (int movement = 0; movement < avgMovementDist.cols(); movement++) {
           if (avgMovementDist(movement, 0) > highestProb && avgMovementDist(movement, 0) > PROB_THRESHOLD) {
@@ -522,14 +539,15 @@ Action Player::shoot(const GameState &pState, const Deadline &pDue)
        //std::cerr << "bird to shoot " << most_certain_bird << '\n';
        //std::cerr << "birds pred move " << movement_map[movement_to_shoot] << '\n';
        //std::cerr << "Current score " << pState.myScore() <<'\n';
-       std::cerr << "Shooting attempt" << '\n';
+
 
        std::cerr << "Species to shoot " << guessSpecies(observation_sequences[(int) most_certain_bird]) << '\n';
        // int species_to_shoot
        // if (/* condition */) {
        //   /* code */
        // }
-
+       count_shooting_attempts++;
+       std::cerr << "Shooting attempt nr: " << count_shooting_attempts << '\n';
        return Action(most_certain_bird, movement_map[movement_to_shoot]);
 
      } else {
@@ -556,7 +574,7 @@ int guessSpeciesAndBlackProb(std::vector<int> observations, double & black_stork
       HMM hmm_model = AllModels[speciesModels_index][model_index];
       // std::cerr << "calcProb(observations): " << hmm_model.calcProb(observations) << '\n';
       double prob = hmm_model.calcProb(observations);
-      // std::cerr << "Part avg_prob" << prob << '\n';
+      //if (prob < -500){prob = -500;}
 
       avg_prob += prob / AllModels[speciesModels_index].size();
     }
