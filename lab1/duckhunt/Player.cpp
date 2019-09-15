@@ -41,7 +41,7 @@ int TRAINING_START = 60;
 double PROB_THRESHOLD = 0.8;
 double GUESS_LOGPROB_THRESHOLD = -5000;
 double PERCENTAGE_TO_GUESS_UNKNOWN = 0.2;
-double BLACK_STORK_LOGPROB_THRESHOLD = -7000;
+double BLACK_STORK_LOGPROB_THRESHOLD = -200;
 int NUM_STATES = 5;
 
 std::vector<std::vector<HMM>> AllModels;
@@ -306,6 +306,30 @@ struct HMM {
         logProb -= log(c[time_step]);
       }
       itertation++;
+    }
+
+    for (int x = 0; x < a.cols(); x++) {
+      for (int y = 0; y < a.rows(); y++) {
+        if (a(x,y) < 0.0001) {
+          a(x,y) = 0.0001;
+        }
+      }
+    }
+
+    for (int x = 0; x < b.cols(); x++) {
+      for (int y = 0; y < b.rows(); y++) {
+        if (b(x,y) < 0.0001) {
+          b(x,y) = 0.0001;
+        }
+      }
+    }
+
+    for (int x = 0; x < pi.cols(); x++) {
+      for (int y = 0; y < pi.rows(); y++) {
+        if (pi(x,y) < 0.0001) {
+          pi(x,y) = 0.0001;
+        }
+      }
     }
 
     return;
