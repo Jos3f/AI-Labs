@@ -26,6 +26,7 @@ std::vector<std::vector<int>> observation_sequences; // Bird, time
 
 int time_step;
 int current_round;
+int count_bird_hits = 0;
 
 //best so far: score  with parameters
 // int MAX_ITER_TRAIN = 40;
@@ -36,15 +37,14 @@ int current_round;
 //
 
 int MAX_ITER_TRAIN = 50;
-int TRAINING_START = 70;
+int TRAINING_START = 60;
 double PROB_THRESHOLD = 0.8;
 double GUESS_LOGPROB_THRESHOLD = -5000;
 double PERCENTAGE_TO_GUESS_UNKNOWN = 0.2;
 double BLACK_STORK_LOGPROB_THRESHOLD = -7000;
-int NUM_STATES = 4;
+int NUM_STATES = 5;
 
 std::vector<std::vector<HMM>> AllModels;
-
 
 
 struct HMM {
@@ -69,11 +69,7 @@ struct HMM {
       0.35, 0.15, 0.25, 0.12, 0.13
     });*/
 
-    // a = Matris(3,3, {
-    //   0.5, 0.20, 0.3,
-    //   0.25, 0.40, 0.35,
-    //   0.22, 0.52, 0.26
-    // });
+
 
     b = generate_b_matris(num_states);/*Matris(9,5, {
       0.10, 0.12, 0.21, 0.15, 0.12, 0.05, 0.08, 0.09, 0.08,
@@ -83,19 +79,12 @@ struct HMM {
       0.15, 0.15, 0.14, 0.12, 0.13, 0.1, 0.05, 0.05, 0.11
     });*/
 
-    // b = Matris(9,3, {
-    //   0.10, 0.12, 0.21, 0.15, 0.12, 0.05, 0.08, 0.09, 0.08,
-    //   0.15, 0.10, 0.15, 0.08, 0.15, 0.1, 0.08, 0.12, 0.07,
-    //   0.2, 0.08, 0.12, 0.05, 0.10, 0.05, 0.15, 0.2, 0.05
-    // });
+
 
     pi = generate_pi(num_states);/*Matris(5,1, {
       0.12, 0.18, 0.2, 0.3, 0.2
     });*/
 
-    // pi = Matris(3,1, {
-    //   0.4, 0.32, 0.28
-    // });
 
     // num_states = A.rows();
     // num_observations = B.cols();
@@ -418,6 +407,33 @@ void updateObservations(const GameState &pState, std::vector<std::vector<int>> &
   }
 }
 
+Matris getMovementDistForBirdModel(int num_states, std::vector<int> observations){
+    HMM birdModel = HMM(num_states);
+    birdModel.train(observations);
+    Matris lastAlpha = birdModel.getLastAlpha(observations);
+    Matris movementDist = birdModel.calcNextObsDist(lastAlpha);
+
+    return movementDist;
+}
+
+void addMovementDistToAvg(Matris movementDist, Matris & avgMovementDist, int num_state_models){
+    for (int move = 0; move < avgMovementDist.cols(); ++move) {
+        avgMovementDist(move, 0) += movementDist(move, 0)/num_state_models;
+    }
+}
+Matris computeAvgMovementDist(std::vector<int> observations){
+    //create multiple HMM:s for each bird and then take avg prediction
+    std::vector<double> states_bird_model = {3, 5};
+    Matris avgMovementDist(COUNT_MOVE, 1);
+
+    //Compute movement dist for each nr of states for a bird
+    for (int index = 0; index < states_bird_model.size(); ++index) {
+        Matris movementDist = getMovementDistForBirdModel(states_bird_model[index], observations);
+        addMovementDistToAvg(movementDist, avgMovementDist, states_bird_model.size());
+    }
+    return avgMovementDist;
+}
+
 std::vector<int> getDeathPenalty(const GameState & pState){
   int predMove = -1;
   int guiltyBird = -1;
@@ -433,14 +449,12 @@ std::vector<int> getDeathPenalty(const GameState & pState){
       if ((likely_species != SPECIES_BLACK_STORK)
       && (black_stork_prob < BLACK_STORK_LOGPROB_THRESHOLD)
       && (likely_species != SPECIES_UNKNOWN) ) {
-        HMM birdModel = HMM(NUM_STATES);
-        birdModel.train(observations);
-        Matris lastAlpha = birdModel.getLastAlpha(observations);
-        Matris movementDist = birdModel.calcNextObsDist(lastAlpha);
 
-        for (int movement = 0; movement < movementDist.cols(); movement++) {
-          if (movementDist(movement, 0) > highestProb && movementDist(movement, 0) > PROB_THRESHOLD) {
-            highestProb = movementDist(movement, 0);
+          Matris avgMovementDist = computeAvgMovementDist(observations);
+
+          for (int movement = 0; movement < avgMovementDist.cols(); movement++) {
+          if (avgMovementDist(movement, 0) > highestProb && avgMovementDist(movement, 0) > PROB_THRESHOLD) {
+            highestProb = avgMovementDist(movement, 0);
             guiltyBird = bird_index;
             predMove = movement;
           }
@@ -477,6 +491,8 @@ Action Player::shoot(const GameState &pState, const Deadline &pDue)
        if (most_certain_bird == -1) {
          return cDontShoot;
        }
+
+         std::cerr << "Nr hit birds: " << count_bird_hits << '\n';
 
        std::cerr << "Time step: " << time_step << '\n';
        //std::cerr << "bird to shoot " << most_certain_bird << '\n';
@@ -602,6 +618,7 @@ void Player::hit(const GameState &pState, int pBird, const Deadline &pDue)
     /*
      * If you hit the bird you are trying to shoot, you will be notified through this function.
      */
+    count_bird_hits += 1;
     std::cerr << "HIT BIRD!!!" << std::endl;
 }
 
