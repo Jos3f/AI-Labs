@@ -16,7 +16,8 @@ namespace ducks
 struct HMM;
 std::vector<double> guessSpecies(std::vector<int> observations);
 int getMin(const std::vector<double> & v);
-int getMin(const std::vector<double> & v);
+int getMax(const std::vector<double> & v);
+void scale(std::vector<double> & v);
 
 // int guessSpeciesAndBlackProb(std::vector<int> observations, double & black_stork_prob);
 
@@ -35,25 +36,26 @@ int current_round;
 int count_bird_hits = 0;
 int count_shooting_attempts = 0;
 
-// int MAX_ITER_TRAIN = 50;
-// int TRAINING_START = 60;
-// double PROB_THRESHOLD = 0.75;
-// double GUESS_LOGPROB_THRESHOLD = -1000;
+// double GUESS_LOGPROB_THRESHOLD = -200;
+// int MAX_ITER_TRAIN = 25;
+// int TRAINING_START = 70;
+// double PROB_THRESHOLD = 0.6;
 // double PERCENTAGE_TO_GUESS_UNKNOWN = 0.2;
-// double BLACK_STORK_LOGPROB_THRESHOLD = -200;
 // int NUM_STATES = 5;
-// score 112
+// double GUESS_TOP_SIMILARITY_THRESHOLD = 0.95;
+// double SHOOTING_TOP_SIMILARITY_THRESHOLD = 0.95;
+// double SPECIES_UNKNOWN_THRESHOLD = 0.15;
+// int MAX_BULLETS_PER_BIRD = 2;
+// int MAX_BULLETS_PER_SPECIES = 10;
 
-//double BLACK_STORK_LOGPROB_THRESHOLD = -200;
-//double GUESS_LOGPROB_THRESHOLD = -1000;
-
+double GUESS_LOGPROB_THRESHOLD = -200;
 int MAX_ITER_TRAIN = 25;
 int TRAINING_START = 70;
 double PROB_THRESHOLD = 0.6;
 double PERCENTAGE_TO_GUESS_UNKNOWN = 0.2;
 int NUM_STATES = 5;
 double GUESS_TOP_SIMILARITY_THRESHOLD = 0.95;
-double SHOOTING_TOP_SIMILARITY_THRESHOLD = 0.9;
+double SHOOTING_TOP_SIMILARITY_THRESHOLD = 0.95;
 double SPECIES_UNKNOWN_THRESHOLD = 0.15;
 int MAX_BULLETS_PER_BIRD = 2;
 int MAX_BULLETS_PER_SPECIES = 10;
@@ -570,6 +572,8 @@ bool speciesIsUnKnown(int best_guess_index, std::vector<double> & guess_distribu
   return (AllModels[best_guess_index].size() == 0 || guess_distribution[best_guess_index] > SPECIES_UNKNOWN_THRESHOLD);
 }
 
+// double getLowestLogProb()
+
 std::vector<int> getDeathPenalty(const GameState & pState){
   int predMove = -1;
   int guiltyBird = -1;
@@ -579,10 +583,23 @@ std::vector<int> getDeathPenalty(const GameState & pState){
     if (pState.getBird(bird_index).isAlive()) {
       std::vector<int> observations = observation_sequences[(int) bird_index];
       //double black_stork_prob = -100000;
+      // Get log, use it as threshold when we don't have the stork in All models
+
+
       std::vector<double> guess_distribution = guessSpecies(observation_sequences[(int) bird_index]);
-      int best_guess_index = getMin(guess_distribution);
-      bool species_is_unknown = speciesIsUnKnown(best_guess_index, guess_distribution);
-      bool might_be_stork = isProbablyBlackStork(guess_distribution);
+
+      if (AllModels[SPECIES_BLACK_STORK].size() == 0 ) {
+        int most_probable_species = getMax(guess_distribution);
+        if (guess_distribution[most_probable_species] < GUESS_LOGPROB_THRESHOLD) {
+          continue;
+        }
+      }
+        scale(guess_distribution);
+        int best_guess_index = getMin(guess_distribution);
+        bool species_is_unknown = speciesIsUnKnown(best_guess_index, guess_distribution);
+        bool might_be_stork = isProbablyBlackStork(guess_distribution);
+
+
       // int likely_species = best_guess_index;
 
       //conditions for death penalty
@@ -695,6 +712,18 @@ int getMin(const std::vector<double> & v){
     return min_elem_index;
 }
 
+int getMax(const std::vector<double> & v){
+  double max_val = -1000000000000000;
+  int max_elem_index = -1;
+  for (int col = 0; col < v.size(); col++) {
+      if (v[col] > max_val){
+         max_val = v[col];
+         max_elem_index = col;
+     }
+    }
+    return max_elem_index;
+}
+
 std::vector<double> guessSpecies(std::vector<int> observations) {
   int best_guess = -1;
   //double highest_similarity_prob = GUESS_LOGPROB_THRESHOLD;
@@ -732,7 +761,7 @@ std::vector<double> guessSpecies(std::vector<int> observations) {
     // }
   }
 
-  scale(all_avg_prob);
+  // scale(all_avg_prob);
   // std::cerr << "AVG PROB: " << '\n';
   // for (auto& val : all_avg_prob) {
   //   std::cerr << val << ", ";
@@ -819,6 +848,8 @@ std::vector<ESpecies> Player::guess(const GameState &pState, const Deadline &pDu
      std::vector<ESpecies> lGuesses(pState.getNumBirds(), SPECIES_UNKNOWN);
      for (size_t bird_index = 0; bird_index < pState.getNumBirds(); bird_index++) {
        std::vector<double> guess_distribution = guessSpecies(observation_sequences[(int) bird_index]);
+       scale(guess_distribution);
+
        // int best_guess_index = getMin(guess_distribution);
 
 
