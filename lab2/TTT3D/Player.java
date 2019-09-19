@@ -107,9 +107,9 @@ public class Player {
         tot_score += checkLine(thePlayer, BOARD_SIZE - 1, BOARD_SIZE - 1, 0, 0, 0, BOARD_SIZE - 1, gameState);
 
         if (thePlayer == Constants.CELL_X){
-            return -1 * tot_score;
+            return tot_score;
         }
-        return tot_score;
+        return -1*tot_score;
 
     }
 
@@ -347,7 +347,7 @@ public class Player {
 
 
         for (int state_index = 1; state_index < nextStates.size(); state_index++) {
-            
+
             int current_score = minimaxAlphaBeta(nextStates.get(state_index), depth, Integer.MIN_VALUE, Integer.MAX_VALUE, (nextStates.get(state_index)).getNextPlayer());
 
             if (gameState.getNextPlayer() == Constants.CELL_X) {
