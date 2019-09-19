@@ -8,23 +8,11 @@ public class Player {
         Vector<GameState> possibleStates = new Vector<>();
         gameState.findPossibleMoves(possibleStates);
 
-        /*for (GameState state: possibleStates
-        ) {
 
-            System.err.println(state.toString(state.getNextPlayer()));
-            System.err.println("------------------------------");
-        }*/
-
-        /*
-        int opponent = Constants.CELL_O;
-        if (player == Constants.CELL_O){
-            opponent = Constants.CELL_X;
-        }
-*/
         int v;
 
         if (depth == 0 || possibleStates.size() == 0){
-            return eval(gameState, player);
+            return heuristic(gameState, player);
         } else if (player == Constants.CELL_X){
             v = Integer.MIN_VALUE;
             for (GameState child: possibleStates
@@ -60,7 +48,8 @@ public class Player {
     }
 
 
-    public int eval(final GameState gameState, int player) {
+    // Maybe change name
+    public int heuristic(final GameState gameState, int player) {
         int [] rows = {0,0,0,0};
         int [] cols = {0,0,0,0};
         int [] diag = {0,0};
@@ -198,22 +187,6 @@ public class Player {
                 }
             }
         }
-        /*
-        for (GameState state: nextStates
-             ) {
-            GameState best_move = nextStates[0];
-            int best_score = minimaxAlphaBeta(nextStates[0], depth, Integer.MIN_VALUE, Integer.MAX_VALUE, (nextStates[0]).getNextPlayer());
-
-            // System.err.println(state.toString(state.getNextPlayer()));
-            System.err.println("------------------------------");
-       }
-
-         */
-
-        // System.exit(0);
-
-        // System.err.print("I AM NOT PLAYER: ");
-        // System.err.println(" " + (gameState.getNextPlayer()));
 
         return best_move;
         /**
