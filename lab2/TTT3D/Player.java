@@ -5,55 +5,60 @@ import java.util.*;
 
 
 public class Player {
+    //class to hold moves and its heuristic function value
+    private class Score {
 
-    //maximizes for player X
-    public int minimaxAlphaBeta(final GameState gameState, int depth, int alpha, int beta, int player) {
+        public int score_val;
+        public GameState move;
+
+        public Score(int score_val, GameState move){
+            this.score_val = score_val;
+            this.move = move;
+        }
+
+    }
+
+    //maximizes for maxI_player
+    public Score minimaxAlphaBeta(final GameState gameState, int depth, int alpha, int beta, int player, int opponent, int maxi_player) {
 
         Vector<GameState> possibleStates = new Vector<>();
         gameState.findPossibleMoves(possibleStates);
 
-        /*for (GameState state: possibleStates
-        ) {
 
-            System.err.println(state.toString(state.getNextPlayer()));
-            System.err.println("------------------------------");
-        }*/
+        Score v = new Score(0, null);
 
-        /*
-        int opponent = Constants.CELL_O;
-        if (player == Constants.CELL_O){
-            opponent = Constants.CELL_X;
-        }
-*/
-        int v;
-
+        //Base case
         if (depth == 0 || possibleStates.size() == 0){
-            return eval(gameState, player);
-        } else if (player == Constants.CELL_X){
-            v = Integer.MIN_VALUE;
+            return heuristicFunction(maxi_player, gameState);
+
+
+        } else if (player == maxi_player){ //Recursive case for maxi_player
+            v.score_val = Integer.MIN_VALUE;
             for (GameState child: possibleStates
-            ) {
-                int v_child = minimaxAlphaBeta(child, depth - 1, alpha, beta, Constants.CELL_O);
-                if (v_child > v){
-                    v = v_child;
+            ) { //opponent and player swith at next level in tree
+                Score v_child = minimaxAlphaBeta(child, depth - 1, alpha, beta, opponent, player, maxi_player);
+                if (v_child.score_val > v.score_val){
+                    v.score_val = v_child.score_val;
+                    v.move = child;
                 }
-                if (v > alpha){
-                    alpha = v;
+                if (v.score_val > alpha){
+                    alpha = v.score_val;
                 }
                 if (beta <= alpha){
                     return v;
                 }
             }
-        } else {
-            v = Integer.MAX_VALUE;
+        } else { //Recursive case for non maxi_player
+            v.score_val = Integer.MAX_VALUE;
             for (GameState child: possibleStates
             ) {
-                int v_child = minimaxAlphaBeta(child, depth - 1, alpha, beta, Constants.CELL_X);
-                if (v_child < v){
-                    v = v_child;
+                Score v_child = minimaxAlphaBeta(child, depth - 1, alpha, beta, opponent, player, maxi_player);
+                if (v_child.score_val < v.score_val){
+                    v.score_val = v_child.score_val;
+                    v.move = child;
                 }
-                if (v < beta){
-                    beta = v;
+                if (v.score_val < beta){
+                    beta = v.score_val;
                 }
                 if (beta <= alpha){
                     return v;
@@ -63,139 +68,148 @@ public class Player {
         return v;
     }
 
-    public int eval(final GameState gameState, int player) {
+    /** computes value and move for whole board for the player (obtained form the GameState class)*/
+    Score heuristicFunction(int thePlayer, GameState gameState) {
+        int BOARD_SIZE = 4;
+        //sum of score for all lines
+        int tot_score = 0;
 
-        int opponent = Constants.CELL_O;
-        if (player == Constants.CELL_O){
-            opponent = Constants.CELL_X;
+        for (int row = 0; row < BOARD_SIZE; ++row)
+            for (int col = 0; col < BOARD_SIZE; ++col) {
+                tot_score += checkLine(thePlayer, row, col, 0, row, col, BOARD_SIZE - 1, gameState);
+
+            }
+        for (int row = 0; row < BOARD_SIZE; ++row)
+            for (int layer = 0; layer < BOARD_SIZE; ++layer) {
+                tot_score += checkLine(thePlayer, row, 0, layer, row, BOARD_SIZE - 1, layer, gameState);
+
+            }
+        for (int col = 0; col < BOARD_SIZE; ++col)
+            for (int layer = 0; layer < BOARD_SIZE; ++layer) {
+                tot_score += checkLine(thePlayer, 0, col, layer, BOARD_SIZE - 1, col, layer, gameState);
+
+            }
+
+        for (int row = 0; row < BOARD_SIZE; ++row) {
+            tot_score += checkLine(thePlayer, row, 0, 0, row, BOARD_SIZE - 1, BOARD_SIZE - 1, gameState);
+
+        }
+        for (int col = 0; col < BOARD_SIZE; ++col) {
+            tot_score += checkLine(thePlayer, 0, col, 0, BOARD_SIZE - 1, col, BOARD_SIZE - 1, gameState);
+
+        }
+        for (int layer = 0; layer < BOARD_SIZE; ++layer) {
+            tot_score += checkLine(thePlayer, 0, 0, layer, BOARD_SIZE - 1, BOARD_SIZE - 1, layer, gameState);
+
         }
 
-        ArrayList<int []> game_rows_player = insertGameRows(gameState, player);
-        ArrayList<int []> game_rows_opponent = insertGameRows(gameState, opponent);
+        for (int row = 0; row < BOARD_SIZE; ++row) {
+            tot_score +=checkLine(thePlayer, row, 0, BOARD_SIZE - 1, row, BOARD_SIZE - 1, 0, gameState);
 
+        }
+        for (int col = 0; col < BOARD_SIZE; ++col) {
+            tot_score += checkLine(thePlayer, 0, col, BOARD_SIZE - 1, BOARD_SIZE - 1, col, 0, gameState);
+
+        }
+        for (int layer = 0; layer < BOARD_SIZE; ++layer) {
+            tot_score += checkLine(thePlayer, 0, BOARD_SIZE - 1, layer, BOARD_SIZE - 1, 0, layer, gameState);
+
+        }
+
+        tot_score +=checkLine(thePlayer, 0, 0, 0, BOARD_SIZE - 1, BOARD_SIZE - 1, BOARD_SIZE - 1, gameState);
+
+        tot_score +=checkLine(thePlayer, 0, BOARD_SIZE - 1, 0, BOARD_SIZE - 1, 0, BOARD_SIZE - 1, gameState);
+
+        tot_score += checkLine(thePlayer, BOARD_SIZE - 1, 0, 0, 0, BOARD_SIZE - 1, BOARD_SIZE - 1, gameState);
+
+        tot_score += checkLine(thePlayer, BOARD_SIZE - 1, BOARD_SIZE - 1, 0, 0, 0, BOARD_SIZE - 1, gameState);
+
+        return new Score(tot_score, gameState);
+
+    }
+
+    //Help function taken from the GameState class
+    public static int rowColumnLayerToCell(int row, int column, int layer)
+    {
+        int BOARD_SIZE = 4;
+        return column + row * BOARD_SIZE + layer * BOARD_SIZE * BOARD_SIZE;
+    }
+
+    /** get score for a line (taken from GameState class)*/
+    private int checkLine(int player, int row1, int col1, int layer1, int row2, int col2, int layer2, GameState gameState) {
         int score = 0;
+        int BOARD_SIZE = 4;
+        int dRow = (row2 - row1) / (BOARD_SIZE - 1);
+        int dCol = (col2 - col1) / (BOARD_SIZE - 1);
+        int dLayer = (layer2 - layer1) / (BOARD_SIZE - 1);
+        int opponent = (player == Constants.CELL_X) ? Constants.CELL_O : Constants.CELL_X;
 
-        // Calc myMarks for rows
-        for (int line_group_index = 0; line_group_index < game_rows_player.size(); line_group_index++) {
-            score += overallMarks(game_rows_player.get(line_group_index),
-                    game_rows_opponent.get(line_group_index));
+        int playerCells = 0, opponentCells = 0;
+
+        //sums score for each element on the line
+        for (int i = 0; i < BOARD_SIZE; ++i) {
+            if (gameState.at(rowColumnLayerToCell(row1 + dRow * i, col1 + dCol * i, layer1 + dLayer * i)) == player) {
+                playerCells++;
+            }
+            if (gameState.at(rowColumnLayerToCell(row1 + dRow * i, col1 + dCol * i, layer1 + dLayer * i)) == opponent) {
+                opponentCells++;
+            }
+            //If no one can win here
+            if ((playerCells > 0) && (opponentCells > 0))
+            {
+                return 0;
+            }
         }
 
-        if (player == Constants.CELL_X){
-            return -1 * score;
+        //Scale the score depending on how many marks the player has on an "opponent-empty" line
+        //scaling factor 74 (# lines on board) is used to make it preferrable to have two marks on one line rather than one mark on two separate lines
+        if(opponentCells == 0)
+        {
+            switch (playerCells){
+                case 0:
+                    score += 0;
+                    break;
+                case 1:
+                    score += 74;
+                    break;
+                case 2:
+                    score += Math.pow(74,2);
+                    break;
+                case 3:
+                    score += Math.pow(74,3);
+                    break;
+                case 4:
+                    score += Math.pow(74,4);
+                    break;
+                default:
+            }
+            //Scale the score negativly depending on how many marks the opponent has on a "player-empty" line
+        }else if(playerCells == 0)
+        {
+            switch (opponentCells){
+                case 0:
+                    score -= 0;
+                    break;
+                case 1:
+                    score -= 74;
+                    break;
+                case 2:
+                    score -= Math.pow(74,2);
+                    break;
+                case 3:
+                    score -= Math.pow(74,3);
+                    break;
+                case 4:
+                    score -= Math.pow(74,4);
+                    break;
+                default:
+            }
         }
+
         return score;
     }
 
-    public ArrayList<int []>  insertGameRows(GameState gameState, int player){
-        int [] rows1 =      {0,0,0,0,
-                0,0,0,0,
-                0,0,0,0,
-                0,0,0,0};
 
-        int [] rows2 =      {0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0};
-        int [] rows3 =      {0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0};
-        int [] diag_row1 =  {0,0,0,0, 0,0,0,0};
-        int [] diag_row2 =  {0,0,0,0, 0,0,0,0};
-        int [] diag_row3 =  {0,0,0,0, 0,0,0,0};
-        int [] diag_main =  {0,0,0,0};
-
-
-        for (int layer1 = 0; layer1 < 4; layer1++) {
-            for (int layer2 = 0; layer2 < 4; layer2++) {
-                for (int layer3 = 0; layer3 < 4; layer3++) {
-                    if (gameState.at(layer1, layer2, layer3) == player) {
-
-                        rows1[layer1 + 4 * layer2]++;
-                        rows2[layer2 + 4 * layer3]++;
-                        rows3[layer3 + 4 * layer1]++;
-
-                        // Diagonals for rows1
-                        if (layer1 == layer2) { // Diagonal right down
-                            diag_row1[layer3]++;
-                        } else if ((layer1 + layer2) == 3) { // Diagonal left down
-                            diag_row1[layer3 + 4]++;
-
-                        }
-                        // Diagonals for rows2
-                        if (layer2 == layer3) { // Diagonal right down
-                            diag_row2[layer1]++;
-                        } else if ((layer2 + layer3) == 3) { // Diagonal left down
-                            diag_row2[layer1 + 4]++;
-                        }
-                        // Diagonals for rows3
-                        if (layer3 == layer1) { // Diagonal right down
-                            diag_row3[layer2]++;
-                        } else if ((layer3 + layer1) == 3) { // Diagonal left down
-                            diag_row3[layer2 + 4]++;
-                        }
-
-                        // Main diagonals
-                        if ((layer1 == layer2) && (layer1 == layer3)) {
-                            diag_main[0]++;
-                        } else if (layer1 == layer2 && (layer1 + layer3 == 3)) {
-                            diag_main[1]++;
-                        } else if ((layer1 + layer2) == 3 && (layer1 == layer3)) {
-                            diag_main[2]++;
-                        } else if ((layer1 + layer2) == 3 && (layer1 + layer3 == 3)) {
-                            diag_main[3]++;
-                        }
-
-                    }
-                }
-            }
-        }
-        return new ArrayList<int []> (List.of(rows1, rows2, rows3, diag_row1, diag_row2, diag_row3, diag_main));
-
-    }
-
-    public int overallMarks(int [] lines, int [] lines_opponent){
-        int score = 0;
-
-        for (int line = 0; line < lines.length; line++) {
-            if (lines_opponent[line] == 0){
-                switch (lines[line]){
-                    case 0:
-                        score += 0;
-                        break;
-                    case 1:
-                        score += 1;
-                        break;
-                    case 2:
-                        score += 5;
-                        break;
-                    case 3:
-                        score += 25;
-                        break;
-                    case 4:
-                        score += 1250;
-                        break;
-                    default:
-                }
-            }
-            if (lines[line] == 0){
-                switch (lines_opponent[line]){
-                    case 0:
-                        score -= 0;
-                        break;
-                    case 1:
-                        score -= 5;
-                        break;
-                    case 2:
-                        score -= 25;
-                        break;
-                    case 3:
-                        score -= 125;
-                        break;
-                    case 4:
-                        score -= 6250;
-                        break;
-                    default:
-                }
-            }
-        }
-        return score;
-    }
     /**
      * Performs a move
      *
@@ -214,25 +228,18 @@ public class Player {
             return new GameState(gameState, new Move());
         }
 
-        int depth = 1;
-        GameState best_move = nextStates.get(0);
-        int best_score = minimaxAlphaBeta(nextStates.get(0), depth, Integer.MIN_VALUE, Integer.MAX_VALUE, (nextStates.get(0)).getNextPlayer());
-
-
-        for (int state_index = 1; state_index < nextStates.size(); state_index++) {
-            int current_score = minimaxAlphaBeta(nextStates.get(state_index), depth, Integer.MIN_VALUE, Integer.MAX_VALUE, (nextStates.get(state_index)).getNextPlayer());
-
-            if (gameState.getNextPlayer() == Constants.CELL_X) {
-                if (current_score < best_score) {
-                    best_move = nextStates.get(state_index);
-                }
-            } else {
-                if (current_score > best_score) {
-                    best_move = nextStates.get(state_index);
-                }
-            }
+        //Determine which player's score to maximized
+        int opponent = Constants.CELL_X;
+        if (gameState.getNextPlayer() == Constants.CELL_X){
+            opponent = Constants.CELL_O;
         }
 
-        return best_move;
-    }    
+        int depth_minus_one  = 1;
+        Score best_scenario = minimaxAlphaBeta(gameState, depth_minus_one, Integer.MIN_VALUE, Integer.MAX_VALUE, gameState.getNextPlayer(), opponent,  gameState.getNextPlayer());
+
+        return best_scenario.move;
+        }
+
+
+
 }
