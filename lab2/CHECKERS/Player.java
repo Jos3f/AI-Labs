@@ -2,67 +2,45 @@ import java.util.*;
 
 public class Player {
 
+    //GLobal dictionary for storing visited states (to be able to evaluate more possible states)
     public State_dictionary global_dictionary;
-
-    private class Pieces_state {
-        public int red_pawns;
-        public int red_kings;
-        public int white_pawns;
-        public int white_kings;
-
-        // Initialize pieces state to default board
-        public Pieces_state() {
-            red_pawns = 12;
-            red_kings = 0;
-            white_pawns = 12;
-            white_kings = 0;
-        }
-
-        // Copy object
-        public Pieces_state(Pieces_state p) {
-            red_pawns = p.red_pawns;
-            red_kings = p.red_kings;
-            white_pawns = p.white_pawns;
-            white_kings = p.white_kings;
-        }
-    }
 
     /**
      * Used for repeated state checking
+     * Hashes board using zobrist to a key to use in hash map
      */
     private class State_keeper {
         public int[] board;
         public int next_player;
         public  int[][] table;
-        public int depth;
 
-        public State_keeper(GameState gameState, int depth , int[][] zobrist_init_table){
+        public State_keeper(GameState gameState, int[][] zobrist_init_table){
             this.next_player = gameState.getNextPlayer();
             board = new int[gameState.NUMBER_OF_SQUARES];
+            //inserts content of each square in board-vector
             for (int square_index = 0; square_index < gameState.NUMBER_OF_SQUARES; square_index++) {
                 board[square_index] = gameState.get(square_index);
             }
             table = zobrist_init_table;
-            this.depth = depth;
         }
 
+        //board -> key using Zobrist hashing
         @Override
         public int hashCode() {
             int hash = 0;
             for (int board_index = 0; board_index < board.length; board_index++) {
                 if ((board[board_index]) != 0){ // Zero means empty cell
                     int piece = board[board_index];
-                    // System.err.println(piece);
                     hash = hash ^ table[board_index][piece];
                 }
             }
+            //to make unique hashes for each player. Matters who's turn it is
             if (next_player == 2){
                 hash = hash * -1;
             }
-            hash += depth;
             return hash;
         }
-
+        // check if state_keeper objects are equal. Hashmap uses this to confirm that it is the same object
         @Override
         public boolean equals(Object obj) {
             if (this == obj)
@@ -75,26 +53,24 @@ public class Player {
 
             if (this.next_player != state.next_player)
                 return false;
-
-            if (this.depth != state.depth)
-                return false;
-
+            //checks if boards are the same
             for (int pos = 0; pos < board.length; pos++) {
                 if (this.board[pos] != state.board[pos]){
                     return false;
                 }
-
             }
             return true;
         }
     }
 
+    // class for keeping all the states
     private class State_dictionary {
-        HashMap<State_keeper, Integer> dictionary;
+        HashMap<State_keeper, Score_and_depth> dictionary;
         int[][] zobrist_table; // Zobris initial map
 
         public State_dictionary() {
             dictionary = new HashMap<>();
+
             // Initialize Zobrist table
             zobrist_table = new int[GameState.NUMBER_OF_SQUARES][7];
             Random rand = new Random();
@@ -105,19 +81,30 @@ public class Player {
             }
         }
 
-        public int getScore(GameState gameState, int depth){
-            State_keeper state = new State_keeper(gameState, depth, zobrist_table);
+        //gets score for a state
+        public Score_and_depth getScore(GameState gameState){
+            State_keeper state = new State_keeper(gameState, zobrist_table);
             return dictionary.get(state);
         }
 
+        // sets score abd depth as values
         public void setScore(GameState gameState, int depth,  int score){
-            State_keeper state = new State_keeper(gameState, depth, zobrist_table);
-            dictionary.put(state, score);
+            State_keeper state = new State_keeper(gameState, zobrist_table);
+            dictionary.put(state, new Score_and_depth(score, depth));
         }
 
+        // if stored depth is equal to or greater than current deptband boards are same;
+        // we wanna use the stored value (=> return state already exists)
         public boolean stateExists(GameState gameState, int depth){
-            State_keeper state = new State_keeper(gameState, depth, zobrist_table);
-            return dictionary.get(state) != null;
+            State_keeper state = new State_keeper(gameState, zobrist_table);
+            Score_and_depth old_score = dictionary.get(state);
+            if (old_score == null){
+                return false;
+            }
+            if (old_score.depth >= depth){
+                return true;
+            }
+            return false;
         }
     }
 
@@ -157,6 +144,7 @@ public class Player {
 
         //Base case
         if (depth == 0 || possibleStates.size() == 0){
+            //calculate value always from the same player's perspective
             return heuristicFunction(maxi_player, gameState);
 
 
@@ -165,12 +153,12 @@ public class Player {
             for (GameState child: possibleStates
             ) { //opponent and player switch at next level in tree
                 Score v_child;
-                if (! global_dictionary.stateExists(child, depth)){
+                if (! global_dictionary.stateExists(child, depth)){ //compute and add/overwrite in hashmap
                     v_child = minimaxAlphaBeta(child, depth - 1, alpha, beta, opponent, player, maxi_player);
                     global_dictionary.setScore(child, depth, v_child.score_val);
                 } else {
                     v_child = new Score(0, null);
-                    v_child.score_val = global_dictionary.getScore(child, depth);
+                    v_child.score_val = global_dictionary.getScore(child).score;
                 }
                 if (v_child.score_val > v.score_val){
                     v.score_val = v_child.score_val;
@@ -193,7 +181,7 @@ public class Player {
                     global_dictionary.setScore(child, depth, v_child.score_val);
                 } else {
                     v_child = new Score(0, null);
-                    v_child.score_val = global_dictionary.getScore(child, depth);
+                    v_child.score_val = global_dictionary.getScore(child).score;
                 }
                 if (v_child.score_val < v.score_val){
                     v.score_val = v_child.score_val;
@@ -216,15 +204,15 @@ public class Player {
         /**
          *
          * Calculate the score in this block
-         *   value of my pawn on my side    = 3;
-         *   value of my pawn on their side = 6;
-         *   value of my king               = 9;
+         *   basic value of my pawn    = 1;
+         *   basic value of my king    = 9;
          * */
         int opponent = Constants.CELL_RED;
         if (gameState.getNextPlayer() == Constants.CELL_RED){
             opponent = Constants.CELL_WHITE;
         }
 
+        // Special case when game is over (only cares about who won or draw)
         if (gameState.isEOG()){
             if (gameState.isDraw()){
                 return new Score(0, gameState);
@@ -242,14 +230,8 @@ public class Player {
                 }
             }
         }
-/*
-        int my_pawns = getNumberOf(gameState, thePlayer, 0);
-        int my_kings = getNumberOf(gameState, thePlayer, Constants.CELL_KING);
-        int opponent_pawns = getNumberOf(gameState, opponent, 0);
-        int opponent_kings = getNumberOf(gameState, opponent, Constants.CELL_KING);
-    */
 
-
+        // better to have pawns near opponents boarder and on the sides
         int[] value_of_cell = new int[]{
                 1, 1, 1, 1,
                 3, 2, 2, 2,
@@ -258,9 +240,10 @@ public class Player {
                 5, 5, 5, 6,
                 7, 6, 6, 6,
                 7, 7, 7, 8,
-                9, 9, 9, 9,
+                9, 9, 9, 9,  // pawn will not be here since it will be a king by then
         };
 
+        // kings are equally valuable all over the board vertically, since they can move backwards
         int[] value_of_cell_king = new int[]{
                 2, 2, 2, 2,
                 2, 1, 1, 1,
@@ -272,33 +255,7 @@ public class Player {
                 2, 2, 2, 2,
         };
 
-/*
-
-        int[] value_of_cell = new int[]{
-                0, 0, 0, 1,
-                1, 0, 0, 0,
-                0, 0, 0, 1,
-                1, 0, 0, 0,
-                0, 0, 0, 1,
-                1, 0, 0, 0,
-                0, 0, 0, 1,
-                1, 0, 0, 0
-
-
-        };
-
-        int[] value_of_cell_king = new int[]{
-                1, 1, 1, 2,
-                2, 1, 1, 1,
-                1, 1, 1, 2,
-                2, 1, 1, 1,
-                1, 1, 1, 2,
-                2, 1, 1, 1,
-                1, 1, 1, 2,
-                2, 1, 1, 1,
-        };
-
-*/
+        // iterate though every cell and assign score based on heuristics
         for (int pos = 0; pos < GameState.NUMBER_OF_SQUARES; pos++) {
 
             if ((gameState.get(pos) & thePlayer) > 0){ // My piece
@@ -318,46 +275,9 @@ public class Player {
 
                 }
             }
-            /*
-            if ((gameState.get(pos) & thePlayer) > 0){ // My piece
-                if ((gameState.get(pos) & Constants.CELL_KING) > 0){ // My king piece
-                    score += 8 + value_of_cell[pos];
-                } else { // My pawn piece
-                    score += 2 + value_of_cell[pos];
-
-                }
-
-            } else if ((gameState.get(pos) & opponent) > 0){ // opponent piece
-                if ((gameState.get(pos) & Constants.CELL_KING) > 0){ // opponent king piece
-                    score -= 8 + value_of_cell[(GameState.NUMBER_OF_SQUARES - 1) - pos];
-
-                } else { // opponent pawn piece
-                    score -= 2 + value_of_cell[(GameState.NUMBER_OF_SQUARES - 1) - pos];
-
-                }
-            } */
         }
-/*
-        score+= 4 * my_pawns;
-        score+= 8 * my_kings;
-        score-= 4 * opponent_pawns;
-        score-= 8 * opponent_kings;
-*/
-
-
         return new Score(score, gameState);
     }
-
-    /**
-     * Function for calculating average distances between the pieces
-     */
-    public double avgDistance(GameState gameState){
-        ArrayList<Integer> my_pieces = new ArrayList<>(); // Fill with pos of my pieces
-        ArrayList<Integer> opponet_pieces = new ArrayList<>(); // Fill with pos of opponent pieces
-        double dist = 0;
-        return dist;
-    }
-
 
     /**
      * Performs a move
@@ -385,6 +305,9 @@ public class Player {
 
         State_dictionary dict = new State_dictionary();
 
+        /**
+         * Unit test 2020 (copyright) below
+         */
 /*
         // Testing hashfunction
         dict.setScore(pState, 10,1337);
@@ -406,6 +329,7 @@ public class Player {
         Score best_scenario = new Score(0,null);
         int depth_minus_one = 1;
 
+
         while (pDue.timeUntil() > 600000000) {
             global_dictionary = new State_dictionary();
 
@@ -418,16 +342,24 @@ public class Player {
             depth_minus_one++;
         }
 
-        /**
-         * Here you should write your algorithms to get the best next move, i.e.
-         * the best next state. This skeleton returns a random move instead.
-         */
+        //Debugging
         System.err.println("NUMBER OF RED PAWNS: " + getNumberOf(pState, Constants.CELL_RED, 0));
         System.err.println("NUMBER OF RED KINGS: " + getNumberOf(pState, Constants.CELL_RED, Constants.CELL_KING));
         System.err.println("NUMBER OF WHITE PAWNS: " + getNumberOf(pState, Constants.CELL_WHITE, 0));
         System.err.println("NUMBER OF WHITE KINGS: " + getNumberOf(pState, Constants.CELL_WHITE, Constants.CELL_KING));
 
         return (best_scenario.move);
+    }
+
+    // Class to hold score and depth used as value in hash map
+    private class Score_and_depth {
+        public int score;
+        public int depth;
+
+        Score_and_depth(int s, int d){
+            score = s;
+            depth = d;
+        }
     }
 }
 
