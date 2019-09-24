@@ -65,6 +65,26 @@ public class Player {
 
         @Override
         public boolean equals(Object obj) {
+            if (this == obj)
+                return true;
+
+            if (obj == null || obj.getClass() != this.getClass())
+                return false;
+
+            State_keeper state = (State_keeper) obj;
+
+            if (this.next_player != state.next_player)
+                return false;
+
+            if (this.depth != state.depth)
+                return false;
+
+            for (int pos = 0; pos < board.length; pos++) {
+                if (this.board[pos] != state.board[pos]){
+                    return false;
+                }
+
+            }
             return true;
         }
     }
@@ -204,12 +224,31 @@ public class Player {
         if (gameState.getNextPlayer() == Constants.CELL_RED){
             opponent = Constants.CELL_WHITE;
         }
+
+        if (gameState.isEOG()){
+            if (gameState.isDraw()){
+                return new Score(0, gameState);
+            } else if (gameState.isRedWin()){
+                if (thePlayer == Constants.CELL_RED){
+                    return new Score(999999999, gameState);
+                } else {
+                    return new Score(-999999999, gameState);
+                }
+            } else if (gameState.isWhiteWin()){
+                if (thePlayer == Constants.CELL_WHITE){
+                    return new Score(999999999, gameState);
+                } else {
+                    return new Score(-999999999, gameState);
+                }
+            }
+        }
 /*
         int my_pawns = getNumberOf(gameState, thePlayer, 0);
         int my_kings = getNumberOf(gameState, thePlayer, Constants.CELL_KING);
         int opponent_pawns = getNumberOf(gameState, opponent, 0);
         int opponent_kings = getNumberOf(gameState, opponent, Constants.CELL_KING);
     */
+
 
         int[] value_of_cell = new int[]{
                 1, 1, 1, 1,
@@ -233,27 +272,70 @@ public class Player {
                 2, 2, 2, 2,
         };
 
+/*
+
+        int[] value_of_cell = new int[]{
+                0, 0, 0, 1,
+                1, 0, 0, 0,
+                0, 0, 0, 1,
+                1, 0, 0, 0,
+                0, 0, 0, 1,
+                1, 0, 0, 0,
+                0, 0, 0, 1,
+                1, 0, 0, 0
 
 
+        };
 
+        int[] value_of_cell_king = new int[]{
+                1, 1, 1, 2,
+                2, 1, 1, 1,
+                1, 1, 1, 2,
+                2, 1, 1, 1,
+                1, 1, 1, 2,
+                2, 1, 1, 1,
+                1, 1, 1, 2,
+                2, 1, 1, 1,
+        };
+
+*/
         for (int pos = 0; pos < GameState.NUMBER_OF_SQUARES; pos++) {
+
             if ((gameState.get(pos) & thePlayer) > 0){ // My piece
                 if ((gameState.get(pos) & Constants.CELL_KING) > 0){ // My king piece
-                    score += 8 * value_of_cell_king[pos];
+                    score += 9 * value_of_cell_king[pos];
                 } else { // My pawn piece
-                    score += 4 * value_of_cell[pos];
+                    score += 1 * value_of_cell[pos];
 
                 }
 
             } else if ((gameState.get(pos) & opponent) > 0){ // opponent piece
                 if ((gameState.get(pos) & Constants.CELL_KING) > 0){ // opponent king piece
-                    score -= 8 * value_of_cell_king[(GameState.NUMBER_OF_SQUARES - 1) - pos];
+                    score -= 9 * value_of_cell_king[(GameState.NUMBER_OF_SQUARES - 1) - pos];
 
                 } else { // opponent pawn piece
-                    score -= 4 * value_of_cell[(GameState.NUMBER_OF_SQUARES - 1) - pos];
+                    score -= 1 * value_of_cell[(GameState.NUMBER_OF_SQUARES - 1) - pos];
 
                 }
             }
+            /*
+            if ((gameState.get(pos) & thePlayer) > 0){ // My piece
+                if ((gameState.get(pos) & Constants.CELL_KING) > 0){ // My king piece
+                    score += 8 + value_of_cell[pos];
+                } else { // My pawn piece
+                    score += 2 + value_of_cell[pos];
+
+                }
+
+            } else if ((gameState.get(pos) & opponent) > 0){ // opponent piece
+                if ((gameState.get(pos) & Constants.CELL_KING) > 0){ // opponent king piece
+                    score -= 8 + value_of_cell[(GameState.NUMBER_OF_SQUARES - 1) - pos];
+
+                } else { // opponent pawn piece
+                    score -= 2 + value_of_cell[(GameState.NUMBER_OF_SQUARES - 1) - pos];
+
+                }
+            } */
         }
 /*
         score+= 4 * my_pawns;
@@ -273,7 +355,7 @@ public class Player {
         ArrayList<Integer> my_pieces = new ArrayList<>(); // Fill with pos of my pieces
         ArrayList<Integer> opponet_pieces = new ArrayList<>(); // Fill with pos of opponent pieces
         double dist = 0;
-         return dist;
+        return dist;
     }
 
 
@@ -306,16 +388,17 @@ public class Player {
 /*
         // Testing hashfunction
         dict.setScore(pState, 10,1337);
-        boolean stateExist = dict.stateExists(pState, 10);
+        GameState pState_copy = pState;
+        boolean stateExist = dict.stateExists(pState_copy,10);
         System.err.println("State exists: " + stateExist);
         stateExist = dict.stateExists(lNextStates.get(0), 10);
         System.err.println("State exists: " + stateExist);
 
-        int[] a = new int[]{1,2};
-        int[] b = new int[]{1,2};
-        HashMap<Integer, Integer> map = new HashMap<Integer, Integer>();
-        map.put(a.hashCode(), 123);
-        System.err.println("Key b gives: " + map.get(b.hashCode()));
+       // int[] a = new int[]{1,2};
+     //   int[] b = new int[]{1,2};
+   //     HashMap<Integer, Integer> map = new HashMap<Integer, Integer>();
+ //       map.put(a, 123);
+//        System.err.println("Key b gives: " + map.get(b));
 
         System.exit(1);
 */
@@ -323,8 +406,12 @@ public class Player {
         Score best_scenario = new Score(0,null);
         int depth_minus_one = 1;
 
-        while (pDue.timeUntil() > 750000000) {
+        while (pDue.timeUntil() > 600000000) {
             global_dictionary = new State_dictionary();
+
+            if (best_scenario.score_val >= 999999999){
+                return best_scenario.move;
+            }
 
             best_scenario = minimaxAlphaBeta(pState, depth_minus_one, Integer.MIN_VALUE, Integer.MAX_VALUE, pState.getNextPlayer(), opponent, pState.getNextPlayer());
 
@@ -343,3 +430,4 @@ public class Player {
         return (best_scenario.move);
     }
 }
+
