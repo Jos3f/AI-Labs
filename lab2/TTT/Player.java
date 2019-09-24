@@ -2,42 +2,60 @@ import java.util.*;
 
 public class Player {
 
-    //maximizes for player X
-    public int minimaxAlphaBeta(final GameState gameState, int depth, int alpha, int beta, int player) {
+    //class to hold moves and its heuristic function value
+    private class Score {
+
+        public int score_val;
+        public GameState move;
+
+        public Score(int score_val, GameState move){
+            this.score_val = score_val;
+            this.move = move;
+        }
+
+    }
+
+    //maximizes for maxI_player
+    public Score minimaxAlphaBeta(final GameState gameState, int depth, int alpha, int beta, int player, int opponent, int maxi_player) {
 
         Vector<GameState> possibleStates = new Vector<>();
         gameState.findPossibleMoves(possibleStates);
 
 
-        int v;
+        Score v = new Score(0, null);
 
+        //Base case
         if (depth == 0 || possibleStates.size() == 0){
-            return heuristic(gameState, player);
-        } else if (player == Constants.CELL_X){
-            v = Integer.MIN_VALUE;
+            return heuristic(maxi_player, gameState);
+
+
+        } else if (player == maxi_player){ //Recursive case for maxi_player
+            v.score_val = Integer.MIN_VALUE;
             for (GameState child: possibleStates
-                 ) {
-                int v_child = minimaxAlphaBeta(child, depth - 1, alpha, beta, Constants.CELL_O);
-                if (v_child > v){
-                    v = v_child;
+            ) { //   nent and player swith at next level in tree
+                Score v_child = minimaxAlphaBeta(child, depth - 1, alpha, beta, opponent, player, maxi_player);
+                if (v_child.score_val > v.score_val){
+                    v.score_val = v_child.score_val;
+                    v.move = child;
                 }
-                if (v > alpha){
-                    alpha = v;
+                if (v.score_val > alpha){
+                    alpha = v.score_val;
                 }
                 if (beta <= alpha){
                     return v;
                 }
             }
-        } else {
-            v = Integer.MAX_VALUE;
+        } else { //Recursive case for non maxi_player
+            v.score_val = Integer.MAX_VALUE;
             for (GameState child: possibleStates
             ) {
-                int v_child = minimaxAlphaBeta(child, depth - 1, alpha, beta, Constants.CELL_X);
-                if (v_child < v){
-                    v = v_child;
+                Score v_child = minimaxAlphaBeta(child, depth - 1, alpha, beta, opponent, player, maxi_player);
+                if (v_child.score_val < v.score_val){
+                    v.score_val = v_child.score_val;
+                    v.move = child;
                 }
-                if (v < beta){
-                    beta = v;
+                if (v.score_val < beta){
+                    beta = v.score_val;
                 }
                 if (beta <= alpha){
                     return v;
@@ -49,7 +67,7 @@ public class Player {
 
 
     // Maybe change name
-    public int heuristic(final GameState gameState, int player) {
+    public Score heuristic( int player, final GameState gameState) {
         int [] rows = {0,0,0,0};
         int [] cols = {0,0,0,0};
         int [] diag = {0,0};
@@ -96,55 +114,26 @@ public class Player {
 
         score = row_score + col_score + diag_score;
 
+        Score return_object = new Score(score, gameState);
+   /*
         if (player == Constants.CELL_X){
-            return -1 * score;
+            return score;
         }
-        return score;
+        return -1 * score;
+        */
+        return return_object;
     }
 
     public int overallMarks(int [] lines, int [] lines_opponent){
         int score = 0;
 
         for (int line = 0; line < lines.length; line++) {
-            if (lines_opponent[line] == 0){
-                switch (lines[line]){
-                    case 0:
-                        score += 0;
-                        break;
-                    case 1:
-                        score += 1;
-                        break;
-                    case 2:
-                        score += 5;
-                        break;
-                    case 3:
-                        score += 25;
-                        break;
-                    case 4:
-                        score += 1250;
-                        break;
-                    default:
-                }
-            }
-            if (lines[line] == 0){
-                switch (lines_opponent[line]){
-                    case 0:
-                        score -= 0;
-                        break;
-                    case 1:
-                        score -= 1;
-                        break;
-                    case 2:
-                        score -= 5;
-                        break;
-                    case 3:
-                        score -= 25;
-                        break;
-                    case 4:
-                        score -= 1250;
-                        break;
-                    default:
-                }
+            if (lines_opponent[line] == 0 && lines[line] == 0){
+                continue;
+            } else if (lines_opponent[line] == 0){
+                score += Math.pow(5, lines[line]);
+            } else if (lines[line] == 0){
+                score -= Math.pow(5, lines_opponent[line]);
             }
         }
         return score;
@@ -169,26 +158,15 @@ public class Player {
             return new GameState(gameState, new Move());
         }
 
-        int depth = 4;
-        GameState best_move = nextStates.get(0);
-        int best_score = minimaxAlphaBeta(nextStates.get(0), depth, Integer.MIN_VALUE, Integer.MAX_VALUE, (nextStates.get(0)).getNextPlayer());
-
-
-        for (int state_index = 1; state_index < nextStates.size(); state_index++) {
-            int current_score = minimaxAlphaBeta(nextStates.get(state_index), depth, Integer.MIN_VALUE, Integer.MAX_VALUE, (nextStates.get(state_index)).getNextPlayer());
-
-            if (gameState.getNextPlayer() == Constants.CELL_X) {
-                if (current_score < best_score) {
-                    best_move = nextStates.get(state_index);
-                }
-            } else {
-                if (current_score > best_score) {
-                    best_move = nextStates.get(state_index);
-                }
-            }
+        int opponent = Constants.CELL_O;
+        if (gameState.getNextPlayer() == Constants.CELL_O){
+            opponent = Constants.CELL_X;
         }
+        int depth = 5;
 
-        return best_move;
+        Score best_suggestion = minimaxAlphaBeta(gameState, depth, Integer.MIN_VALUE, Integer.MAX_VALUE, gameState.getNextPlayer(), opponent, gameState.getNextPlayer());
+
+        return best_suggestion.move;
         /**
          * Here you should write your algorithms to get the best next move, i.e.
          * the best next state. This skeleton returns a random move instead.
