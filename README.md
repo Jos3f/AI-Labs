@@ -2,7 +2,7 @@
 Two labs from the master course in Artificial Intelligence on KTH, fall 2019
 
 ### Tools
-**C++** - labb 1
+**C++** - labb 1 <br/>
 **Java** - labb 2
 
 ## Labb 1
